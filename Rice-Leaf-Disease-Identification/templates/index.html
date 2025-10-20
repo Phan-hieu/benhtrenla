@@ -1,0 +1,228 @@
+<!DOCTYPE html>
+<html lang="vi">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Phát hiện bệnh lá lúa</title>
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+
+<body>
+    <div class="container">
+        <header>
+            <h1>🌾 Phát hiện bệnh lá lúa</h1>
+            <p>Sử dụng AI để nhận diện các loại bệnh trên lá lúa</p>
+        </header>
+
+        <main>
+            <div class="upload-section">
+                <form id="uploadForm" action="/predict" method="post" enctype="multipart/form-data">
+                    <div class="model-selection">
+                        <label for="model_type">Chọn mô hình:</label>
+                        <select name="model_type" id="model_type">
+                            <option value="resnet" {% if selected_model=='resnet' or
+                                request.form.get('model_type')=='resnet' %}selected{% endif %}>
+                                ResNet152V2 (Độ chính xác cao)</option>
+                            <option value="mobilenet" {% if selected_model=='mobilenet' or
+                                request.form.get('model_type')=='mobilenet' %}selected{% endif %}>
+                                MobileNetV2 (Nhanh, nhẹ)</option>
+                        </select>
+                    </div>
+
+                    <div class="quality-options">
+                        <label class="checkbox-label">
+                            <input type="checkbox" name="disable_quality_check" id="disableQualityCheck">
+                            <span class="checkmark"></span>
+                            Tắt kiểm tra chất lượng ảnh (cho phép phân tích mọi ảnh)
+                        </label>
+                    </div>
+
+                    <div class="file-upload">
+                        <input type="file" id="fileInput" name="file" accept="image/*" required>
+                        <label for="fileInput" class="file-label">
+                            <span class="file-icon">📁</span>
+                            <span class="file-text">Chọn ảnh lá lúa</span>
+                        </label>
+
+                        <!-- Preview container -->
+                        <div id="imagePreview" class="image-preview-container" style="display: none;">
+                            <div class="preview-header">
+                                <h4>📸 Ảnh đã chọn:</h4>
+                                <button type="button" id="removeImage" class="remove-btn">✕</button>
+                            </div>
+                            <div class="preview-content">
+                                <img id="previewImg" src="" alt="Preview" class="preview-image">
+                                <div class="preview-info">
+                                    <div id="fileName" class="file-name"></div>
+                                    <div id="fileSize" class="file-size"></div>
+                                    <div id="fileDimensions" class="file-dimensions"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+
+                    <div class="form-buttons">
+                        <button type="submit" class="predict-btn">🔍 Phân tích</button>
+                        <button type="button" id="resetButton" class="reset-btn">🔄 Đặt lại</button>
+                    </div>
+                </form>
+            </div>
+
+            {% if error %}
+            <div class="error-message">
+                <h3>❌ Lỗi</h3>
+                <p>{{ error }}</p>
+                {% if show_skip_option %}
+                <div class="skip-option">
+                    <form action="/predict" method="post" enctype="multipart/form-data" style="display: inline;">
+                        <input type="hidden" name="model_type" value="{{ request.form.get('model_type', 'resnet') }}">
+                        <input type="hidden" name="skip_quality_check" value="true">
+                        <input type="hidden" name="file"
+                            value="{{ request.files.get('file', '').filename if request.files.get('file') else '' }}">
+                        <button type="submit" class="skip-btn">⚠️ Bỏ qua kiểm tra chất lượng và phân tích</button>
+                    </form>
+                </div>
+                {% endif %}
+            </div>
+            {% endif %}
+
+            {% if result %}
+            <div class="result-section">
+                <h2>📊 Kết quả phân tích</h2>
+
+                {% if uploaded_image %}
+                <div class="image-preview">
+                    <h3>Ảnh đã tải lên:</h3>
+                    <img src="{{ uploaded_image }}" alt="Uploaded image" class="uploaded-img">
+                </div>
+                {% endif %}
+
+                <div class="prediction-result">
+                    <div class="result-card">
+                        <h3>🎯 Dự đoán</h3>
+                        <div class="disease-name">{{ result.class }}</div>
+                        <div class="model-info">
+                            <span class="model-used">Mô hình: {{ result.model_used }}</span>
+                            <span class="confidence">Độ tin cậy: {{ "%.1f"|format(result.confidence * 100) }}%</span>
+                        </div>
+                    </div>
+                </div>
+
+                {% if result.quality_info %}
+                <div class="quality-info">
+                    <h3>📊 Chất lượng ảnh</h3>
+                    <div class="quality-score">
+                        <div class="score-circle">
+                            <span class="score-number">{{ result.quality_info.score }}</span>
+                            <span class="score-total">/100</span>
+                        </div>
+                        <div class="score-grade">Grade: {{ result.quality_info.grade }}</div>
+                    </div>
+
+                    {% if result.quality_warnings %}
+                    <div class="quality-warnings">
+                        <h4>⚠️ Cảnh báo chất lượng:</h4>
+                        <ul>
+                            {% for warning in result.quality_warnings %}
+                            <li>{{ warning }}</li>
+                            {% endfor %}
+                        </ul>
+                    </div>
+                    {% endif %}
+                </div>
+                {% endif %}
+
+                <div class="disease-info">
+                    <h3>ℹ️ Thông tin về bệnh</h3>
+                    <div class="info-content">
+                        {% if result.class == 'Healthy' %}
+                        <p><strong>Lá lúa khỏe mạnh:</strong> Không có dấu hiệu bệnh tật, cây phát triển bình thường.
+                        </p>
+                        {% elif result.class == 'Bacterial Leaf Blast' %}
+                        <p><strong>Bệnh cháy lá do vi khuẩn:</strong> Gây ra bởi vi khuẩn Xanthomonas oryzae, làm lá bị
+                            cháy và héo.</p>
+                        {% elif result.class == 'Brown Spot' %}
+                        <p><strong>Bệnh đốm nâu:</strong> Gây ra bởi nấm Helminthosporium oryzae, tạo ra các đốm nâu
+                            trên lá.</p>
+                        {% elif result.class == 'Leaf Blast' %}
+                        <p><strong>Bệnh cháy lá:</strong> Gây ra bởi nấm Magnaporthe oryzae, làm lá bị cháy và rụng sớm.
+                        </p>
+                        {% elif result.class == 'Leaf Scald' %}
+                        <p><strong>Bệnh cháy lá do nắng:</strong> Gây ra bởi nấm Rhynchosporium oryzae, làm lá bị cháy
+                            và khô.</p>
+                        {% elif result.class == 'Narrow Brown Spot' %}
+                        <p><strong>Bệnh đốm nâu hẹp:</strong> Gây ra bởi nấm Cercospora oryzae, tạo ra các đốm nâu hẹp
+                            trên lá.</p>
+                        {% endif %}
+                    </div>
+                </div>
+            </div>
+            {% endif %}
+
+            <div class="info-section">
+                <h2>📋 Hướng dẫn sử dụng</h2>
+                <div class="info-grid">
+                    <div class="info-card">
+                        <h3>📸 Chụp ảnh</h3>
+                        <p>Chụp ảnh lá lúa rõ nét, đủ ánh sáng, tập trung vào vùng bị bệnh</p>
+                    </div>
+                    <div class="info-card">
+                        <h3>🔍 Phân tích</h3>
+                        <p>Chọn mô hình phù hợp và nhấn "Phân tích" để nhận kết quả</p>
+                    </div>
+                    <div class="info-card">
+                        <h3>📊 Kết quả</h3>
+                        <p>Xem kết quả dự đoán, độ tin cậy và thông tin về bệnh</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="model-comparison">
+                <h2>⚖️ So sánh mô hình</h2>
+                <div class="comparison-table">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Tính năng</th>
+                                <th>ResNet152V2</th>
+                                <th>MobileNetV2</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            <tr>
+                                <td><strong>Độ chính xác</strong></td>
+                                <td>Cao</td>
+                                <td>Tốt</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Tốc độ</strong></td>
+                                <td>Chậm hơn</td>
+                                <td>Nhanh hơn</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Kích thước</strong></td>
+                                <td>Lớn (~600MB)</td>
+                                <td>Nhỏ (~14MB)</td>
+                            </tr>
+                            <tr>
+                                <td><strong>Phù hợp cho</strong></td>
+                                <td>Độ chính xác cao</td>
+                                <td>Thiết bị di động</td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </main>
+
+        <footer>
+            <p>🌾 Rice Leaf Disease Identification - Powered by AI</p>
+        </footer>
+    </div>
+
+    <script src="{{ url_for('static', filename='reset.js') }}"></script>
+    <script src="{{ url_for('static', filename='image-preview.js') }}"></script>
+</body>
+
+</html>
