@@ -6,6 +6,91 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Phát hiện bệnh lá lúa</title>
     <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+    <style>
+        /* Zoom modal styles */
+        .zoom-modal {
+            display: none;
+            position: fixed;
+            z-index: 2000;
+            left: 0;
+            top: 0;
+            width: 100%;
+            height: 100%;
+            overflow: hidden;
+            background-color: rgba(0, 0, 0, 0.7);
+            align-items: center;
+            justify-content: center;
+            padding: 20px;
+        }
+
+        .zoom-modal.open {
+            display: flex;
+        }
+
+        .zoom-modal .zoom-container {
+            position: relative;
+            max-width: 95%;
+            max-height: 95%;
+            background: #fff;
+            border-radius: 8px;
+            padding: 10px;
+            box-shadow: 0 8px 30px rgba(0, 0, 0, 0.4);
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+        }
+
+        .zoom-toolbar {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+        }
+
+        .zoom-toolbar button {
+            background: #fff;
+            border: 1px solid #ddd;
+            padding: 6px 10px;
+            border-radius: 6px;
+            cursor: pointer;
+        }
+
+        .zoom-stage {
+            overflow: hidden;
+            background: #222;
+            flex: 1 1 auto;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 6px;
+            position: relative;
+        }
+
+        .zoom-stage img {
+            max-width: none;
+            /* we'll control size with transform */
+            user-select: none;
+            -webkit-user-drag: none;
+            cursor: grab;
+            transform-origin: 0 0;
+            will-change: transform;
+        }
+
+        .zoom-stage img:active {
+            cursor: grabbing;
+        }
+
+        .zoom-close {
+            position: absolute;
+            right: 8px;
+            top: 8px;
+            background: #fff;
+            border: 1px solid #ddd;
+            padding: 6px 8px;
+            border-radius: 6px;
+            cursor: pointer;
+            z-index: 3;
+        }
+    </style>
 </head>
 
 <body>
@@ -21,12 +106,16 @@
                     <div class="model-selection">
                         <label for="model_type">Chọn mô hình:</label>
                         <select name="model_type" id="model_type">
-                            <option value="resnet" {% if selected_model=='resnet' or
-                                request.form.get('model_type')=='resnet' %}selected{% endif %}>
-                                ResNet152V2 (Độ chính xác cao)</option>
+
+                            <option value="resnet_best" {% if selected_model=='resnet_best' or
+                                request.form.get('model_type')=='resnet_best' %}selected{% endif %}>
+                                ResNet152V2_best (Tối ưu nhất)
+                            </option>
+
                             <option value="mobilenet" {% if selected_model=='mobilenet' or
                                 request.form.get('model_type')=='mobilenet' %}selected{% endif %}>
-                                MobileNetV2 (Nhanh, nhẹ)</option>
+                                MobileNetV2 (Nhanh, nhẹ)
+                            </option>
                         </select>
                     </div>
 
@@ -45,7 +134,6 @@
                             <span class="file-text">Chọn ảnh lá lúa</span>
                         </label>
 
-                        <!-- Preview container -->
                         <div id="imagePreview" class="image-preview-container" style="display: none;">
                             <div class="preview-header">
                                 <h4>📸 Ảnh đã chọn:</h4>
@@ -94,7 +182,8 @@
                 {% if uploaded_image %}
                 <div class="image-preview">
                     <h3>Ảnh đã tải lên:</h3>
-                    <img src="{{ uploaded_image }}" alt="Uploaded image" class="uploaded-img">
+                    <img src="{{ uploaded_image }}" alt="Uploaded image" class="uploaded-img"
+                        style="max-width:300px;cursor:zoom-in;border-radius:6px;">
                 </div>
                 {% endif %}
 
@@ -139,7 +228,7 @@
                         {% if result.class == 'Healthy' %}
                         <p><strong>Lá lúa khỏe mạnh:</strong> Không có dấu hiệu bệnh tật, cây phát triển bình thường.
                         </p>
-                        {% elif result.class == 'Bacterial Leaf Blast' %}
+                        {% elif result.class == 'Bacterial Leaf bright' %}
                         <p><strong>Bệnh cháy lá do vi khuẩn:</strong> Gây ra bởi vi khuẩn Xanthomonas oryzae, làm lá bị
                             cháy và héo.</p>
                         {% elif result.class == 'Brown Spot' %}
@@ -186,6 +275,7 @@
                             <tr>
                                 <th>Tính năng</th>
                                 <th>ResNet152V2</th>
+                                <th>ResNet152V2_best</th>
                                 <th>MobileNetV2</th>
                             </tr>
                         </thead>
@@ -193,22 +283,26 @@
                             <tr>
                                 <td><strong>Độ chính xác</strong></td>
                                 <td>Cao</td>
-                                <td>Tốt</td>
+                                <td>Rất cao</td>
+                                <td>Trung bình</td>
                             </tr>
                             <tr>
                                 <td><strong>Tốc độ</strong></td>
-                                <td>Chậm hơn</td>
-                                <td>Nhanh hơn</td>
+                                <td>Chậm</td>
+                                <td>Vừa</td>
+                                <td>Nhanh</td>
                             </tr>
                             <tr>
                                 <td><strong>Kích thước</strong></td>
                                 <td>Lớn (~600MB)</td>
+                                <td>Trung bình (~400MB)</td>
                                 <td>Nhỏ (~14MB)</td>
                             </tr>
                             <tr>
                                 <td><strong>Phù hợp cho</strong></td>
-                                <td>Độ chính xác cao</td>
-                                <td>Thiết bị di động</td>
+                                <td>Độ chính xác cao nhất</td>
+                                <td>Cân bằng tốc độ & độ chính xác</td>
+                                <td>Thiết bị di động / nhanh</td>
                             </tr>
                         </tbody>
                     </table>
@@ -223,6 +317,132 @@
 
     <script src="{{ url_for('static', filename='reset.js') }}"></script>
     <script src="{{ url_for('static', filename='image-preview.js') }}"></script>
+
+    <!-- Zoom modal markup -->
+    <div id="zoomModal" class="zoom-modal" aria-hidden="true">
+        <div class="zoom-container">
+            <div class="zoom-toolbar">
+                <button id="zoomIn" title="Phóng to">＋</button>
+                <button id="zoomOut" title="Thu nhỏ">－</button>
+                <button id="zoomReset" title="Đặt lại">⟲</button>
+                <div style="flex:1"></div>
+                <button id="zoomClose" class="zoom-close" title="Đóng">✕</button>
+            </div>
+            <div class="zoom-stage" id="zoomStage">
+                <img id="zoomImage" src="" alt="Zoomed image">
+            </div>
+        </div>
+    </div>
+
+    <script>
+        (function () {
+            const uploaded = document.querySelector('.uploaded-img');
+            const modal = document.getElementById('zoomModal');
+            const zoomImage = document.getElementById('zoomImage');
+            const zoomIn = document.getElementById('zoomIn');
+            const zoomOut = document.getElementById('zoomOut');
+            const zoomReset = document.getElementById('zoomReset');
+            const zoomClose = document.getElementById('zoomClose');
+            const zoomStage = document.getElementById('zoomStage');
+
+            if (!uploaded) return; // nothing to do
+
+            let scale = 1;
+            let minScale = 1;
+            let maxScale = 5;
+            let translateX = 0, translateY = 0;
+            let isPanning = false, startX = 0, startY = 0;
+
+            function applyTransform() {
+                zoomImage.style.transform = `translate(${translateX}px, ${translateY}px) scale(${scale})`;
+            }
+
+            function openModal(src) {
+                zoomImage.src = src;
+                // reset
+                scale = 1; translateX = 0; translateY = 0;
+                zoomImage.onload = () => {
+                    // set minScale so image fits inside stage
+                    const imgW = zoomImage.naturalWidth;
+                    const imgH = zoomImage.naturalHeight;
+                    const stageRect = zoomStage.getBoundingClientRect();
+                    const scaleX = stageRect.width / imgW;
+                    const scaleY = stageRect.height / imgH;
+                    minScale = Math.min(1, Math.max(0.2, Math.min(scaleX, scaleY)));
+                    scale = Math.max(minScale, 1);
+                    applyTransform();
+                };
+                modal.classList.add('open');
+                modal.setAttribute('aria-hidden', 'false');
+            }
+
+            function closeModal() {
+                modal.classList.remove('open');
+                modal.setAttribute('aria-hidden', 'true');
+            }
+
+            uploaded.addEventListener('click', () => openModal(uploaded.src));
+
+            zoomClose.addEventListener('click', closeModal);
+            modal.addEventListener('click', (e) => { if (e.target === modal) closeModal(); });
+
+            zoomIn.addEventListener('click', () => { scale = Math.min(maxScale, +(scale + 0.25).toFixed(2)); applyTransform(); });
+            zoomOut.addEventListener('click', () => { scale = Math.max(minScale, +(scale - 0.25).toFixed(2)); applyTransform(); });
+            zoomReset.addEventListener('click', () => { scale = Math.max(minScale, 1); translateX = 0; translateY = 0; applyTransform(); });
+
+            // wheel to zoom
+            zoomStage.addEventListener('wheel', function (e) {
+                e.preventDefault();
+                const delta = Math.sign(e.deltaY) * -0.15;
+                const rect = zoomImage.getBoundingClientRect();
+                const offsetX = e.clientX - rect.left;
+                const offsetY = e.clientY - rect.top;
+
+                const prevScale = scale;
+                scale = Math.min(maxScale, Math.max(minScale, +(scale + delta).toFixed(3)));
+                // adjust translate so zoom focuses on cursor
+                const ratio = scale / prevScale;
+                translateX = translateX - (offsetX) * (ratio - 1);
+                translateY = translateY - (offsetY) * (ratio - 1);
+                applyTransform();
+            }, { passive: false });
+
+            // pan with mouse
+            zoomStage.addEventListener('mousedown', function (e) {
+                isPanning = true; startX = e.clientX; startY = e.clientY;
+                zoomStage.style.cursor = 'grabbing';
+            });
+            window.addEventListener('mousemove', function (e) { if (!isPanning) return; const dx = e.clientX - startX; const dy = e.clientY - startY; startX = e.clientX; startY = e.clientY; translateX += dx; translateY += dy; applyTransform(); });
+            window.addEventListener('mouseup', function () { if (isPanning) { isPanning = false; zoomStage.style.cursor = 'grab'; } });
+
+            // touch support
+            let touchStartDist = 0; let lastTouch = null;
+            zoomStage.addEventListener('touchstart', function (e) {
+                if (e.touches.length === 1) { lastTouch = e.touches[0]; }
+                if (e.touches.length === 2) {
+                    const a = e.touches[0], b = e.touches[1];
+                    touchStartDist = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+                }
+            }, { passive: true });
+
+            zoomStage.addEventListener('touchmove', function (e) {
+                if (e.touches.length === 1 && lastTouch) {
+                    const t = e.touches[0];
+                    const dx = t.clientX - lastTouch.clientX; const dy = t.clientY - lastTouch.clientY;
+                    translateX += dx; translateY += dy; lastTouch = t; applyTransform();
+                } else if (e.touches.length === 2) {
+                    const a = e.touches[0], b = e.touches[1];
+                    const dist = Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
+                    const delta = (dist - touchStartDist) * 0.005;
+                    touchStartDist = dist;
+                    scale = Math.min(maxScale, Math.max(minScale, +(scale + delta).toFixed(3)));
+                    applyTransform();
+                }
+            }, { passive: true });
+
+            zoomStage.addEventListener('touchend', function (e) { if (e.touches.length === 0) lastTouch = null; });
+        })();
+    </script>
 </body>
 
 </html>

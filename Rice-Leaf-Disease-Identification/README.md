@@ -9,7 +9,7 @@ Rice Leaf Disease Identification is a deep learning project aimed at detecting a
 Both models utilize transfer learning and are trained on a dataset containing approximately 2600 images belonging to six different classes.
 
 ### Project Video
-[Watch the video here](https://www.loom.com/share/3ac68f165e2f4d1bb7d67fe5c1256e99?sid=97793e34-a80f-4686-b068-bf4ce70e7d8e)
+[Watch the video here](https:/git/www.loom.com/share/3ac68f165e2f4d1bb7d67fe5c1256e99?sid=97793e34-a80f-4686-b068-bf4ce70e7d8e)
 
 
 ## Dataset

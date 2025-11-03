@@ -1,39 +1,46 @@
+import os
+import numpy as np
 import tensorflow as tf
 from tensorflow.keras.applications import MobileNetV2
 from tensorflow.keras.layers import Dense, GlobalAveragePooling2D, Dropout
 from tensorflow.keras.models import Model
 from tensorflow.keras.optimizers import Adam
-from tensorflow.keras.preprocessing.image import ImageDataGenerator
+from tensorflow.keras.preprocessing.image import ImageDataGenerator# ✅ dùng keras gốc để tránh cảnh báo
 from tensorflow.keras.callbacks import ModelCheckpoint, EarlyStopping, ReduceLROnPlateau
-import os
-import numpy as np
 from sklearn.metrics import classification_report, confusion_matrix
 import matplotlib.pyplot as plt
 import seaborn as sns
 
-# ==== Cấu hình cơ bản ====
+# =========================================================
+# 🔧 CẤU HÌNH CƠ BẢN
+# =========================================================
 IMG_SIZE = 224
 BATCH_SIZE = 32
 EPOCHS = 50
 LEARNING_RATE = 0.001
 
-# ==== Đường dẫn dataset ====
+# Ngắt TF32 để tính toán chính xác hơn trên GPU NVIDIA
+tf.config.experimental.enable_tensor_float_32_execution(False)
+
+# Đường dẫn dataset
 TRAIN_DIR = 'dataset/train'
 VAL_DIR = 'dataset/validation'
 TEST_DIR = 'dataset/test'
 
-# ==== Danh sách lớp (4 bệnh) ====
-CLASS_NAMES = ['Bacterial Leaf Blast', 'Brown Spot', 'Healthy', 'Leaf Blast']
+# Danh sách lớp
+CLASS_NAMES = ['Bacterial leaf bright', 'Brown Spot', 'Healthy', 'Leaf Blast']
 NUM_CLASSES = len(CLASS_NAMES)
 
-# ==== Tạo mô hình MobileNetV2 ====
+# =========================================================
+# 🧠 TẠO MÔ HÌNH MOBILENETV2
+# =========================================================
 def create_mobilenet_model():
     base_model = MobileNetV2(
         weights='imagenet',
         include_top=False,
         input_shape=(IMG_SIZE, IMG_SIZE, 3)
     )
-    base_model.trainable = False
+    base_model.trainable = False  # chỉ train phần đầu lúc đầu
 
     x = base_model.output
     x = GlobalAveragePooling2D()(x)
@@ -46,7 +53,10 @@ def create_mobilenet_model():
     model = Model(inputs=base_model.input, outputs=predictions)
     return model
 
-# ==== Tạo generator ====
+
+# =========================================================
+# 📦 DATA GENERATOR
+# =========================================================
 def create_data_generators():
     train_datagen = ImageDataGenerator(
         rescale=1./255,
@@ -87,9 +97,12 @@ def create_data_generators():
 
     return train_generator, val_generator, test_generator
 
-# ==== Train model ====
+
+# =========================================================
+# 🚀 TRAIN MODEL
+# =========================================================
 def train_model():
-    print("Đang tạo mô hình MobileNetV2...")
+    print("🔧 Đang tạo mô hình MobileNetV2...")
     model = create_mobilenet_model()
 
     model.compile(
@@ -98,18 +111,18 @@ def train_model():
         metrics=['accuracy']
     )
 
-    print("Mô hình được tạo thành công!")
-    print(f"Số lượng tham số: {model.count_params():,}")
+    print(f"✅ Mô hình đã sẵn sàng! Tổng số tham số: {model.count_params():,}")
 
     train_gen, val_gen, test_gen = create_data_generators()
 
+    os.makedirs("models", exist_ok=True)
     callbacks = [
-        ModelCheckpoint('mobilenetv2_model.h5', monitor='val_accuracy', save_best_only=True, verbose=1),
+        ModelCheckpoint('models/mobilenetv2_model.h5', monitor='val_accuracy', save_best_only=True, verbose=1),
         EarlyStopping(monitor='val_accuracy', patience=10, restore_best_weights=True, verbose=1),
         ReduceLROnPlateau(monitor='val_loss', factor=0.5, patience=5, min_lr=1e-7, verbose=1)
     ]
 
-    print("Bắt đầu training...")
+    print("🏋️‍♂️ Bắt đầu huấn luyện...")
     history = model.fit(
         train_gen,
         epochs=EPOCHS,
@@ -120,14 +133,17 @@ def train_model():
 
     return model, history, test_gen
 
-# ==== Đánh giá mô hình ====
+
+# =========================================================
+# 📊 ĐÁNH GIÁ MÔ HÌNH
+# =========================================================
 def evaluate_model(model, test_generator):
-    print("Đang đánh giá mô hình...")
+    print("📈 Đang đánh giá mô hình...")
     predictions = model.predict(test_generator)
     predicted_classes = np.argmax(predictions, axis=1)
     true_classes = test_generator.classes
 
-    print("\nClassification Report:")
+    print("\n=== Classification Report ===")
     print(classification_report(true_classes, predicted_classes, target_names=CLASS_NAMES))
 
     cm = confusion_matrix(true_classes, predicted_classes)
@@ -138,10 +154,13 @@ def evaluate_model(model, test_generator):
     plt.xlabel('Predicted')
     plt.ylabel('Actual')
     plt.tight_layout()
-    plt.savefig('mobilenetv2_confusion_matrix.png')
+    plt.savefig('models/mobilenetv2_confusion_matrix.png')
     plt.show()
 
-# ==== Vẽ biểu đồ training ====
+
+# =========================================================
+# 📉 VẼ BIỂU ĐỒ HUẤN LUYỆN
+# =========================================================
 def plot_training_history(history):
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
     ax1.plot(history.history['accuracy'], label='Training Accuracy')
@@ -153,12 +172,15 @@ def plot_training_history(history):
     ax2.set_title('Model Loss')
     ax2.legend()
     plt.tight_layout()
-    plt.savefig('mobilenetv2_training_history.png')
+    plt.savefig('models/mobilenetv2_training_history.png')
     plt.show()
 
-# ==== Fine-tune ====
+
+# =========================================================
+# 🔧 FINE-TUNE MÔ HÌNH
+# =========================================================
 def fine_tune_model(model):
-    print("Bắt đầu fine-tuning...")
+    print("🎯 Bắt đầu fine-tuning MobileNetV2...")
     base_model = model.layers[0]
     base_model.trainable = True
     fine_tune_at = len(base_model.layers) - 100
@@ -166,28 +188,33 @@ def fine_tune_model(model):
         layer.trainable = False
 
     model.compile(
-        optimizer=Adam(learning_rate=LEARNING_RATE/10),
+        optimizer=Adam(learning_rate=LEARNING_RATE / 10),
         loss='categorical_crossentropy',
         metrics=['accuracy']
     )
-    print(f"Số layers được train: {sum([1 for layer in base_model.layers if layer.trainable])}")
+    print(f"Số lớp được train: {sum([1 for layer in base_model.layers if layer.trainable])}")
     return model
 
-# ==== Hàm chính ====
+
+# =========================================================
+# 🏁 HÀM MAIN
+# =========================================================
 def main():
-    print("=== TRAINING MOBILENETV2 MODEL FOR RICE LEAF DISEASE DETECTION ===")
+    print("=== TRAINING MOBILE NET V2 FOR RICE LEAF DISEASE DETECTION ===")
 
     if not os.path.exists(TRAIN_DIR):
-        print(f"Lỗi: Không tìm thấy thư mục dataset tại {TRAIN_DIR}")
-        print("Vui lòng tổ chức dataset như sau:")
-        print("dataset/")
-        print("├── train/")
-        print("│   ├── Bacterial Leaf Blast/")
-        print("│   ├── Brown Spot/")
-        print("│   ├── Healthy/")
-        print("│   └── Leaf Blast/")
-        print("├── validation/")
-        print("└── test/")
+        print(f"❌ Không tìm thấy dataset tại: {TRAIN_DIR}")
+        print("""
+Vui lòng tổ chức dataset như sau:
+dataset/
+├── train/
+│   ├── Bacterial leaf bright/
+│   ├── Brown Spot/
+│   ├── Healthy/
+│   └── Leaf Blast/
+├── validation/
+└── test/
+""")
         return
 
     try:
@@ -195,27 +222,28 @@ def main():
         plot_training_history(history)
         evaluate_model(model, test_gen)
 
-        print("\nBạn có muốn fine-tune mô hình không? (y/n): ", end="")
-        if input().lower() == 'y':
+        ans = input("\nBạn có muốn fine-tune mô hình không? (y/n): ").lower()
+        if ans == 'y':
             model = fine_tune_model(model)
             train_gen, val_gen, _ = create_data_generators()
             model.fit(
                 train_gen,
                 epochs=10,
                 validation_data=val_gen,
-                callbacks=[ModelCheckpoint('mobilenetv2_finetuned_model.h5',
+                callbacks=[ModelCheckpoint('models/mobilenetv2_finetuned_model.h5',
                                            monitor='val_accuracy', save_best_only=True)],
                 verbose=1
             )
             evaluate_model(model, test_gen)
 
-        print("\n✅ Training hoàn thành!")
-        print("📁 Mô hình đã được lưu: mobilenetv2_model.h5")
+        print("\n✅ Huấn luyện hoàn tất!")
+        print("📁 Mô hình đã lưu tại: models/mobilenetv2_model.h5")
 
     except Exception as e:
-        print(f"Lỗi trong quá trình training: {str(e)}")
+        print(f"\n❌ Lỗi trong quá trình huấn luyện: {str(e)}")
         import traceback
         traceback.print_exc()
+
 
 if __name__ == "__main__":
     main()
