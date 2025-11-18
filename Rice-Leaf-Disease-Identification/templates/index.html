@@ -108,13 +108,29 @@
                         <select name="model_type" id="model_type">
 
                             <option value="resnet_best" {% if selected_model=='resnet_best' or
-                                request.form.get('model_type')=='resnet_best' %}selected{% endif %}>
-                                ResNet152V2_best (Tối ưu nhất)
+                                request.form.get('model_type')=='resnet_best' %}selected{% endif %} {% if loaded_models
+                                is defined and not loaded_models.get('resnet_best') %}disabled{% endif %}>
+                                ResNet152V2_best (Tối ưu nhất){% if loaded_models is defined and not
+                                loaded_models.get('resnet_best') %} (không khả dụng){% endif %}
                             </option>
 
                             <option value="mobilenet" {% if selected_model=='mobilenet' or
-                                request.form.get('model_type')=='mobilenet' %}selected{% endif %}>
-                                MobileNetV2 (Nhanh, nhẹ)
+                                request.form.get('model_type')=='mobilenet' %}selected{% endif %} {% if loaded_models is
+                                defined and not loaded_models.get('mobilenet') %}disabled{% endif %}>
+                                MobileNetV2 (Nhanh, nhẹ){% if loaded_models is defined and not
+                                loaded_models.get('mobilenet') %} (không khả dụng){% endif %}
+                            </option>
+
+                            <option value="densenet" {% if selected_model=='densenet' or
+                                request.form.get('model_type')=='densenet' %}selected{% endif %} {% if loaded_models is
+                                defined and not loaded_models.get('densenet') %}disabled{% endif %}>
+                                DenseNet121 (Cân bằng){% if loaded_models is defined and not
+                                loaded_models.get('densenet') %} (không khả dụng){% endif %}
+                            </option>
+                            <!-- Always show DenseNet201 so user can explicitly select it; server will return an error if model not loaded -->
+                            <option value="densenet201" {% if selected_model=='densenet201' or
+                                request.form.get('model_type')=='densenet201' %}selected{% endif %}>
+                                DenseNet201 (Độ chính xác cao)
                             </option>
                         </select>
                     </div>
@@ -275,6 +291,7 @@
                             <tr>
                                 <th>Tính năng</th>
                                 <th>ResNet152V2</th>
+                                <th>DenseNet201 </th>
                                 <th>ResNet152V2_best</th>
                                 <th>MobileNetV2</th>
                             </tr>
@@ -317,6 +334,52 @@
 
     <script src="{{ url_for('static', filename='reset.js') }}"></script>
     <script src="{{ url_for('static', filename='image-preview.js') }}"></script>
+
+    <!-- Check which models are loaded on the server and enable/disable options accordingly -->
+    <script>
+        (function () {
+            // Run after DOM ready
+            window.addEventListener('load', function () {
+                fetch('/health')
+                    .then(function (r) { return r.json(); })
+                    .then(function (data) {
+                        var select = document.getElementById('model_type');
+                        if (!select) return;
+
+                        var availability = {
+                            'mobilenet': data.mobilenet_model_loaded,
+                            'resnet_best': data.resnet_best_model_loaded,
+                            'densenet': data.densenet_model_loaded,
+                            'densenet201': data.densenet201_model_loaded
+                        };
+
+                        // Mark unavailable options disabled and append note
+                        for (var i = 0; i < select.options.length; i++) {
+                            var opt = select.options[i];
+                            var val = opt.value;
+                            if (availability.hasOwnProperty(val) && !availability[val]) {
+                                opt.disabled = true;
+                                if (!/\(không khả dụng\)/.test(opt.text)) opt.text = opt.text + ' (không khả dụng)';
+                            } else {
+                                opt.disabled = false;
+                                opt.text = opt.text.replace(' (không khả dụng)', '');
+                            }
+                        }
+
+                        // If currently selected option is disabled, choose the first available one
+                        if (select.options[select.selectedIndex] && select.options[select.selectedIndex].disabled) {
+                            for (var j = 0; j < select.options.length; j++) {
+                                if (!select.options[j].disabled) { select.selectedIndex = j; break; }
+                            }
+                        }
+                    })
+                    .catch(function (err) {
+                        // ignore network errors; keep options as rendered server-side
+                        console.warn('Could not fetch /health to determine model availability', err);
+                    });
+            });
+        })();
+    </script>
 
     <!-- Zoom modal markup -->
     <div id="zoomModal" class="zoom-modal" aria-hidden="true">

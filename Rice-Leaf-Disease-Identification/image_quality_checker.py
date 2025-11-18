@@ -12,7 +12,10 @@ class ImageQualityChecker:
         # Cấu hình ngưỡng chất lượng - Điều chỉnh linh hoạt hơn
         self.min_resolution = (150, 150)  # Kích thước tối thiểu - giảm từ 224 xuống 150
         self.max_resolution = (8192, 8192)  # Kích thước tối đa - tăng lên 8192
+        
+        # SỬA: Ngưỡng này sẽ được dùng trong check_blur
         self.min_blur_threshold = 10  # Ngưỡng blur rất thấp - chỉ từ chối ảnh cực kỳ mờ
+        
         self.min_brightness = 10  # Độ sáng tối thiểu - giảm xuống 10
         self.max_brightness = 250  # Độ sáng tối đa - tăng lên 250
         self.min_contrast = 5  # Độ tương phản tối thiểu - giảm xuống 5
@@ -74,21 +77,26 @@ class ImageQualityChecker:
             # Tính Laplacian variance
             laplacian_var = cv2.Laplacian(gray, cv2.CV_64F).var()
             
-            # Đánh giá độ nét với logic rất linh hoạt
-            if laplacian_var < 5:  # Cực kỳ mờ - chỉ từ chối những ảnh thực sự không thể phân tích
+            # === SỬA LOGIC: Sử dụng self.min_blur_threshold ===
+            # Ngưỡng 1: Cực kỳ mờ (Fail) - ví dụ: < 5 nếu ngưỡng là 10
+            hard_fail_threshold = self.min_blur_threshold / 2
+            # Ngưỡng 2: Hơi mờ (Warning) - ví dụ: < 15 nếu ngưỡng là 10
+            warning_threshold = self.min_blur_threshold * 1.5 
+            
+            if laplacian_var < hard_fail_threshold:
                 return {
                     'valid': False,
                     'message': f'Ảnh cực kỳ mờ (điểm số: {laplacian_var:.1f}). Không thể phân tích được.',
                     'blur_score': laplacian_var
                 }
-            elif laplacian_var < 15:  # Mờ nhưng vẫn có thể thử
+            elif laplacian_var < warning_threshold:
                 return {
                     'valid': True,
                     'message': f'Ảnh hơi mờ (điểm số: {laplacian_var:.1f}) nhưng có thể thử phân tích.',
                     'blur_score': laplacian_var,
                     'warning': True
                 }
-            elif laplacian_var < 50:  # Chấp nhận được
+            elif laplacian_var < 50:  # Giữ một ngưỡng "chấp nhận được"
                 return {
                     'valid': True,
                     'message': f'Ảnh có độ nét chấp nhận được (điểm số: {laplacian_var:.1f})',
@@ -100,6 +108,7 @@ class ImageQualityChecker:
                     'message': f'Ảnh rõ nét (điểm số: {laplacian_var:.1f})',
                     'blur_score': laplacian_var
                 }
+            # === KẾT THÚC SỬA ===
                 
         except Exception as e:
             return {
@@ -153,7 +162,7 @@ class ImageQualityChecker:
                         'brightness': brightness,
                         'contrast': contrast
                     }
-                    
+                        
         except Exception as e:
             return {
                 'valid': False,
@@ -227,7 +236,7 @@ class ImageQualityChecker:
                         'message': f'Định dạng {format_name} được hỗ trợ',
                         'format': format_name
                     }
-                    
+                        
         except Exception as e:
             return {
                 'valid': False,
@@ -286,19 +295,27 @@ class ImageQualityChecker:
         
         # Tạo khuyến nghị
         if results['overall_valid']:
-            results['recommendations'].append("Ảnh có chất lượng tốt, có thể tiến hành phân tích.")
+             # Xóa khuyến nghị mặc định không cần thiết
+             pass
         else:
             results['recommendations'].append("Vui lòng chụp lại ảnh với chất lượng tốt hơn.")
         
         # Thêm khuyến nghị cụ thể
-        if blur_check.get('blur_score', 0) < self.min_blur_threshold * 2:
+        # SỬA: Dùng logic của check_blur
+        if not blur_check['valid'] or blur_check.get('warning'):
             results['recommendations'].append("Đảm bảo ảnh được chụp trong điều kiện ánh sáng tốt và giữ máy ảnh ổn định.")
         
         if resolution_check.get('resolution'):
             width, height = resolution_check['resolution']
             if width < 512 or height < 512:
-                results['recommendations'].append("Chụp ảnh với độ phân giải cao hơn để có kết quả tốt hơn.")
+                # Chỉ thêm nếu nó chưa phải là lỗi
+                if resolution_check['valid']: 
+                    results['recommendations'].append("Chụp ảnh với độ phân giải cao hơn để có kết quả tốt hơn.")
         
+        # Thêm khuyến nghị cho độ sáng/tương phản
+        if not brightness_contrast_check['valid']:
+             results['recommendations'].append("Chụp ảnh ở nơi có đủ sáng, tránh bị quá tối hoặc bị lóa (chói sáng).")
+
         return results
     
     def get_quality_score(self, image_path):
@@ -333,13 +350,14 @@ class ImageQualityChecker:
             return {
                 'score': score,
                 'grade': self._get_quality_grade(score),
-                'results': results
+                'results': results # TRẢ VỀ KẾT QUẢ ĐẦY ĐỦ
             }
             
         except Exception as e:
             return {
                 'score': 0,
                 'grade': 'F',
+                'results': {'errors': [str(e)], 'overall_valid': False, 'warnings': [], 'recommendations': []}, # Đảm bảo trả về cấu trúc
                 'error': str(e)
             }
     
@@ -360,20 +378,36 @@ class ImageQualityChecker:
         else:
             return 'F'
 
-# Hàm tiện ích để sử dụng trong Flask app
+# === SỬA HÀM TIỆN ÍCH ===
+# Các hàm này không cần thiết nữa nếu chúng ta sửa app.py
+# Nhưng nếu bạn muốn giữ chúng, hãy tối ưu hóa
+# Tuy nhiên, cách tốt nhất là XÓA 2 HÀM NÀY và chỉ import class.
+# Nhưng để giữ nguyên import trong app.py, chúng ta sẽ sửa chúng
+
+_checker_instance = ImageQualityChecker()
+
 def check_image_quality(image_path):
     """
     Hàm tiện ích để kiểm tra chất lượng ảnh
+    (Bây giờ sẽ được gọi từ hàm get_score để tránh 2 lần check)
     """
+    # Hàm này thực ra không cần thiết nếu app.py gọi get_score trước
+    # Chúng ta giữ lại để tương thích, nhưng nó sẽ không hiệu quả
+    # Trừ khi chúng ta thay đổi app.py
     checker = ImageQualityChecker()
     return checker.comprehensive_check(image_path)
+
 
 def get_image_quality_score(image_path):
     """
     Hàm tiện ích để lấy điểm chất lượng ảnh
+    Hàm này sẽ trả về MỌI THỨ
     """
-    checker = ImageQualityChecker()
-    return checker.get_quality_score(image_path)
+    # Chỉ tạo 1 instance và dùng nó
+    global _checker_instance
+    return _checker_instance.get_quality_score(image_path)
+
+# =========================
 
 if __name__ == "__main__":
     # Test với ảnh mẫu
@@ -381,40 +415,44 @@ if __name__ == "__main__":
     
     if len(sys.argv) > 1:
         image_path = sys.argv[1]
-        checker = ImageQualityChecker()
         
+        # Sửa: Dùng hàm get_score để lấy mọi thứ 1 lần
         print("=== KIỂM TRA CHẤT LƯỢNG ẢNH ===")
         print(f"Ảnh: {image_path}")
         print()
         
-        # Kiểm tra toàn diện
-        results = checker.comprehensive_check(image_path)
-        
+        quality_data = get_image_quality_score(image_path)
+        results = quality_data['results']
+
         print("KẾT QUẢ KIỂM TRA:")
-        for check_name, check_result in results['checks'].items():
-            status = "✅" if check_result['valid'] else "❌"
-            print(f"{status} {check_name.upper()}: {check_result['message']}")
+        if 'checks' in results:
+            for check_name, check_result in results['checks'].items():
+                status = "✅" if check_result['valid'] else "❌"
+                print(f"{status} {check_name.upper()}: {check_result['message']}")
+        else:
+            print("Không thể thực hiện kiểm tra chi tiết.")
+
         
         print()
-        if results['warnings']:
+        if results.get('warnings'):
             print("CẢNH BÁO:")
             for warning in results['warnings']:
                 print(f"⚠️ {warning}")
         
-        if results['errors']:
+        if results.get('errors'):
             print("LỖI:")
             for error in results['errors']:
                 print(f"❌ {error}")
         
         print()
-        print("KHUYẾN NGHỊ:")
-        for rec in results['recommendations']:
-            print(f"💡 {rec}")
+        if results.get('recommendations'):
+            print("KHUYẾN NGHỊ:")
+            for rec in results['recommendations']:
+                print(f"💡 {rec}")
         
         # Điểm chất lượng
-        quality_score = checker.get_quality_score(image_path)
         print()
-        print(f"ĐIỂM CHẤT LƯỢNG: {quality_score['score']}/100 (Grade: {quality_score['grade']})")
+        print(f"ĐIỂM CHẤT LƯỢNG: {quality_data['score']}/100 (Grade: {quality_data['grade']})")
         
     else:
         print("Sử dụng: python image_quality_checker.py <đường_dẫn_ảnh>")
